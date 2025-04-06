@@ -42,6 +42,8 @@
         <input type="text" id="adresseEntreprise" value="4 RUE DE LA PAIX, 75000 PARIS">
         <label for="siret">SIRET</label>
         <input type="text" id="siret" value="1234567890002">
+        <label for="codeNaf">Code NAF</label>
+        <input type="text" id="codeNaf" value="6202A">
         <label for="telEntreprise">Téléphone</label>
         <input type="text" id="telEntreprise" value="01 23 45 67 89">
         <label for="emailEntreprise">Email</label>
@@ -57,6 +59,8 @@
         <input type="text" id="telSalarie" value="06 12 34 56 78">
         <label for="secuSalarie">N° Sécurité Sociale</label>
         <input type="text" id="secuSalarie" value="2 2800000000000">
+        <label for="dateEntree">Date d'entrée dans l'entreprise (JJ/MM/AAAA)</label>
+        <input type="text" id="dateEntree" value="01/01/2020">
         <h2>Période et Salaire</h2>
         <label for="mois">Mois (ex: 01 pour janvier)</label>
         <input type="text" id="mois" value="01">
@@ -83,6 +87,7 @@
                     "nomEntreprise",
                     "adresseEntreprise",
                     "siret",
+                    "codeNaf", // Nouveau champ ajouté
                     "telEntreprise",
                     "emailEntreprise",
                     "nomSalarie",
@@ -90,6 +95,7 @@
                     "emailSalarie",
                     "telSalarie",
                     "secuSalarie",
+                    "dateEntree", // Nouveau champ ajouté
                     "mois",
                     "annee",
                     "salaireBrut",
@@ -111,6 +117,16 @@
                 return true;
             }
 
+            // Calcul de l'ancienneté en années
+            function calculerAnciennete(dateEntree) {
+                const [day, month, year] = dateEntree.split("/").map(Number);
+                const entree = new Date(year, month - 1, day); // Convertir en objet Date
+                const aujourdHui = new Date();
+                const diffTime = Math.abs(aujourdHui - entree);
+                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365); // Différence en années
+                return Math.floor(diffYears); // Arrondir à l'année inférieure
+            }
+
             // Calcul de l'impôt sur le revenu
             function calculerImpot(revenuImposable, nbParts) {
                 const tranches = [
@@ -120,11 +136,7 @@
                     { limite: 168_994, taux: 0.41 },
                     { limite: Infinity, taux: 0.45 }
                 ];
-
-                // Calcul du quotient familial
                 const quotientFamilial = revenuImposable / nbParts;
-
-                // Calcul de l'impôt sur le quotient familial
                 let impotSurQuotient = 0;
                 for (let i = 0; i < tranches.length; i++) {
                     const tranche = tranches[i];
@@ -134,8 +146,6 @@
                         impotSurQuotient += trancheRevenu * tranche.taux;
                     }
                 }
-
-                // Impôt total après application des parts
                 return impotSurQuotient * nbParts;
             }
 
@@ -147,6 +157,7 @@
                 const nomEntreprise = document.getElementById("nomEntreprise").value;
                 const adresseEntreprise = document.getElementById("adresseEntreprise").value;
                 const siret = document.getElementById("siret").value;
+                const codeNaf = document.getElementById("codeNaf").value; // Nouveau champ récupéré
                 const telEntreprise = document.getElementById("telEntreprise").value;
                 const emailEntreprise = document.getElementById("emailEntreprise").value;
                 const nomSalarie = document.getElementById("nomSalarie").value;
@@ -154,11 +165,15 @@
                 const emailSalarie = document.getElementById("emailSalarie").value;
                 const telSalarie = document.getElementById("telSalarie").value;
                 const secuSalarie = document.getElementById("secuSalarie").value;
+                const dateEntree = document.getElementById("dateEntree").value; // Nouveau champ récupéré
                 const mois = document.getElementById("mois").value;
                 const annee = document.getElementById("annee").value;
                 const salaireBrut = parseFloat(document.getElementById("salaireBrut").value);
                 const statutMarital = parseInt(document.getElementById("statutMarital").value);
                 const nbEnfants = parseInt(document.getElementById("nbEnfants").value);
+
+                // Calcul de l'ancienneté
+                const anciennete = calculerAnciennete(dateEntree);
 
                 // Calcul des cotisations
                 const cotisations = {
@@ -186,17 +201,15 @@
                     }
                 };
 
+                // Calcul des congés payés
+                const congesPayes = salaireBrut * 0.1;
+
                 // Calculs finaux
                 const totalSalarial = Object.values(cotisations.salariales).reduce((acc, val) => acc + val, 0);
                 const totalPatronal = Object.values(cotisations.patronales).reduce((acc, val) => acc + val, 0);
                 const netImposable = salaireBrut - cotisations.salariales.csgDeductible - totalSalarial + cotisations.salariales.csgNonDeductible;
-
-                // Calcul du nombre de parts fiscales
                 const nbParts = statutMarital + (nbEnfants > 0 ? Math.min(nbEnfants, 3) * 0.5 : 0); // Maximum 3 enfants pris en compte
-
-                // Calcul de l'impôt sur le revenu
                 const impotRevenu = calculerImpot(netImposable * 12, nbParts) / 12; // Mensualisation
-
                 const netAPayer = salaireBrut - totalSalarial - impotRevenu;
 
                 // Génération du PDF
@@ -214,11 +227,12 @@
                     nomEntreprise,
                     adresseEntreprise,
                     `SIRET : ${siret}`,
+                    `Code NAF : ${codeNaf}`, // Ajout du code NAF
                     `Tel : ${telEntreprise}`,
                     `Email : ${emailEntreprise}`
                 ];
                 const yEntrepriseStart = 30;
-                const yEntrepriseHeight = 35;
+                const yEntrepriseHeight = 40; // Hauteur ajustée pour inclure le code NAF
                 doc.setFillColor(230, 245, 255);
                 doc.roundedRect(15, yEntrepriseStart, 85, yEntrepriseHeight, 3, 3, "F");
                 let yPositionEntreprise = yEntrepriseStart + (yEntrepriseHeight / 2) - ((infosEntreprise.length * 4) / 2);
@@ -232,12 +246,13 @@
                 const infosSalarie = [
                     nomSalarie,
                     adresseSalarie,
-                    `N° SS : ${secuSalarie}`,
+                    `N° DE SECURITE SOCIAL : ${secuSalarie}`,
+                    `Date d'entrée : ${dateEntree} (${anciennete} ans d'ancienneté)`, // Ajout de l'ancienneté
                     `Tel : ${telSalarie}`,
                     `Email : ${emailSalarie}`
                 ];
                 const ySalarieStart = 30;
-                const ySalarieHeight = 35;
+                const ySalarieHeight = 40; // Hauteur ajustée pour inclure l'ancienneté
                 doc.setFillColor(230, 245, 255);
                 doc.roundedRect(110, ySalarieStart, 85, ySalarieHeight, 3, 3, "F");
                 let yPositionSalarie = ySalarieStart + (ySalarieHeight / 2) - ((infosSalarie.length * 4) / 2);
@@ -250,9 +265,9 @@
                 // Période de paie
                 doc.setFont(undefined, 'bold');
                 doc.setFontSize(10);
-                doc.text("Période :", 105, yPositionEntreprise + 25, { align: 'center' });
+                doc.text("Période :", 105, yPositionEntreprise + 18, { align: 'center' });
                 doc.setFontSize(9);
-                doc.text(`01/${mois.padStart(2, '0')}/${annee} au 31/${mois.padStart(2, '0')}/${annee}`, 105, yPositionEntreprise + 30, { align: 'center' });
+                doc.text(`01/${mois.padStart(2, '0')}/${annee} au 31/${mois.padStart(2, '0')}/${annee}`, 105, yPositionEntreprise + 24, { align: 'center' });
                 doc.setFont(undefined, 'normal');
 
                 // Tableau des cotisations
@@ -268,6 +283,7 @@
                     ["CSG déductible", "", "6.8%", cotisations.salariales.csgDeductible.toFixed(2), "", ""],
                     ["CSG/CRDS non déductible", "", "2.9%", cotisations.salariales.csgNonDeductible.toFixed(2), "", ""],
                     ["Impôt sur le revenu prélevé à la source", "", "", impotRevenu.toFixed(2), "", ""],
+                    ["CONGÉS PAYÉS (10%)", "", "10%", congesPayes.toFixed(2), "", ""],
                     ["", "", "TOTAL SALARIAL", totalSalarial.toFixed(2), "", ""],
                     ["COTISATIONS PATRONALES", "", "", "", "", ""],
                     ["Maladie - maternité - invalidité - décès", "", "13%", "", "", cotisations.patronales.maladie.toFixed(2)],
@@ -289,7 +305,7 @@
                 const columnWidths = [60, 15, 15, 25, 25, 30];
                 const totalTableWidth = columnWidths.reduce((a, b) => a + b, 0);
                 const startX = (210 - totalTableWidth) / 2; // Centrage horizontal
-                const tableStartY = yPositionEntreprise + 40; // Position Y de départ du tableau
+                const tableStartY = yPositionEntreprise + 33; // Position Y de départ du tableau
                 const headerHeight = 9; // Hauteur de l'en-tête
 
                 // Dessiner un rectangle arrondi uniquement en haut pour le tableau
