@@ -4,8 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Générateur de Fiche de Paie</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js" defer></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -77,17 +75,21 @@
         <input type="number" id="nbEnfants" value="0" min="0">
         <button onclick="genererPDF()">Générer la fiche de paie</button>
     </div>
+
+    <!-- Scripts placés à la fin du body -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
     <script>
         window.onload = function () {
             const { jsPDF } = window.jspdf;
 
-            // Fonction pour valider les champs
+            // Validation des champs
             function validateInputs() {
                 const requiredFields = [
                     "nomEntreprise",
                     "adresseEntreprise",
                     "siret",
-                    "codeNaf", // Nouveau champ ajouté
+                    "codeNaf",
                     "telEntreprise",
                     "emailEntreprise",
                     "nomSalarie",
@@ -95,36 +97,78 @@
                     "emailSalarie",
                     "telSalarie",
                     "secuSalarie",
-                    "dateEntree", // Nouveau champ ajouté
+                    "dateEntree",
                     "mois",
                     "annee",
                     "salaireBrut",
                     "statutMarital",
                     "nbEnfants"
                 ];
+
                 for (const field of requiredFields) {
                     const value = document.getElementById(field).value.trim();
-                    if (!value && field !== "nbEnfants") { // nbEnfants peut être 0
+                    if (!value && field !== "nbEnfants") {
                         alert(`Le champ "${field}" est obligatoire.`);
                         return false;
                     }
                 }
+
+                // Validation SIRET
+                const siret = document.getElementById("siret").value;
+                if (!/^\d{14}$/.test(siret)) {
+                    alert("Le SIRET doit contenir exactement 14 chiffres.");
+                    return false;
+                }
+
+                // Validation Code NAF
+                const codeNaf = document.getElementById("codeNaf").value;
+                if (!/^\d{4}[A-Z]$/.test(codeNaf)) {
+                    alert("Le Code NAF doit être au format AAAA-Z (exemple : 1234Z).");
+                    return false;
+                }
+
+                // Validation Numéro SS
+                const secuSalarie = document.getElementById("secuSalarie").value.replace(/\s/g, "");
+                if (!/^\d{15}$/.test(secuSalarie)) {
+                    alert("Le numéro de sécurité sociale doit contenir exactement 15 chiffres.");
+                    return false;
+                }
+
+                // Validation Date d'entrée
+                const dateEntree = document.getElementById("dateEntree").value;
+                if (!/^\d{2}\/\d{2}\/\d{4}$/.test(dateEntree)) {
+                    alert("La date d'entrée doit être au format JJ/MM/AAAA.");
+                    return false;
+                }
+
+                // Validation Salaire Brut
                 const salaireBrut = parseFloat(document.getElementById("salaireBrut").value);
                 if (isNaN(salaireBrut) || salaireBrut <= 0) {
                     alert("Le salaire brut doit être un nombre positif.");
                     return false;
                 }
+
                 return true;
             }
 
-            // Calcul de l'ancienneté en années
+            // Calcul de l'ancienneté
             function calculerAnciennete(dateEntree) {
                 const [day, month, year] = dateEntree.split("/").map(Number);
-                const entree = new Date(year, month - 1, day); // Convertir en objet Date
+                const entree = new Date(year, month - 1, day);
                 const aujourdHui = new Date();
-                const diffTime = Math.abs(aujourdHui - entree);
-                const diffYears = diffTime / (1000 * 60 * 60 * 24 * 365); // Différence en années
-                return Math.floor(diffYears); // Arrondir à l'année inférieure
+
+                let diffYears = aujourdHui.getFullYear() - entree.getFullYear();
+                let diffMonths = aujourdHui.getMonth() - entree.getMonth();
+                let diffDays = aujourdHui.getDate() - entree.getDate();
+
+                if (diffMonths < 0 || (diffMonths === 0 && diffDays < 0)) {
+                    diffYears--;
+                }
+
+                return {
+                    ans: diffYears,
+                    mois: Math.abs(diffMonths + (diffDays < 0 ? -1 : 0))
+                };
             }
 
             // Calcul de l'impôt sur le revenu
@@ -136,16 +180,20 @@
                     { limite: 168_994, taux: 0.41 },
                     { limite: Infinity, taux: 0.45 }
                 ];
+
                 const quotientFamilial = revenuImposable / nbParts;
                 let impotSurQuotient = 0;
+
                 for (let i = 0; i < tranches.length; i++) {
                     const tranche = tranches[i];
                     const limiteInferieure = i === 0 ? 0 : tranches[i - 1].limite;
                     const trancheRevenu = Math.min(tranche.limite, quotientFamilial) - limiteInferieure;
+
                     if (trancheRevenu > 0) {
                         impotSurQuotient += trancheRevenu * tranche.taux;
                     }
                 }
+
                 return impotSurQuotient * nbParts;
             }
 
@@ -153,29 +201,27 @@
             window.genererPDF = function () {
                 if (!validateInputs()) return;
 
-                // Récupération des données du formulaire
+                // Récupération des données
                 const nomEntreprise = document.getElementById("nomEntreprise").value;
                 const adresseEntreprise = document.getElementById("adresseEntreprise").value;
                 const siret = document.getElementById("siret").value;
-                const codeNaf = document.getElementById("codeNaf").value; // Nouveau champ récupéré
+                const codeNaf = document.getElementById("codeNaf").value;
                 const telEntreprise = document.getElementById("telEntreprise").value;
                 const emailEntreprise = document.getElementById("emailEntreprise").value;
                 const nomSalarie = document.getElementById("nomSalarie").value;
                 const adresseSalarie = document.getElementById("adresseSalarie").value;
                 const emailSalarie = document.getElementById("emailSalarie").value;
                 const telSalarie = document.getElementById("telSalarie").value;
-                const secuSalarie = document.getElementById("secuSalarie").value;
-                const dateEntree = document.getElementById("dateEntree").value; // Nouveau champ récupéré
-                const mois = document.getElementById("mois").value;
+                const secuSalarie = document.getElementById("secuSalarie").value.replace(/\s/g, "");
+                const dateEntree = document.getElementById("dateEntree").value;
+                const mois = document.getElementById("mois").value.padStart(2, '0');
                 const annee = document.getElementById("annee").value;
                 const salaireBrut = parseFloat(document.getElementById("salaireBrut").value);
                 const statutMarital = parseInt(document.getElementById("statutMarital").value);
                 const nbEnfants = parseInt(document.getElementById("nbEnfants").value);
 
-                // Calcul de l'ancienneté
+                // Calculs
                 const anciennete = calculerAnciennete(dateEntree);
-
-                // Calcul des cotisations
                 const cotisations = {
                     salariales: {
                         maladie: salaireBrut * 0.0075,
@@ -201,23 +247,19 @@
                     }
                 };
 
-                // Calcul des congés payés
-                const congesPayes = salaireBrut * 0.1;
-
-                // Calculs finaux
                 const totalSalarial = Object.values(cotisations.salariales).reduce((acc, val) => acc + val, 0);
                 const totalPatronal = Object.values(cotisations.patronales).reduce((acc, val) => acc + val, 0);
                 const netImposable = salaireBrut - cotisations.salariales.csgDeductible - totalSalarial + cotisations.salariales.csgNonDeductible;
-                const nbParts = statutMarital + (nbEnfants > 0 ? Math.min(nbEnfants, 3) * 0.5 : 0); // Maximum 3 enfants pris en compte
-                const impotRevenu = calculerImpot(netImposable * 12, nbParts) / 12; // Mensualisation
+                const nbParts = statutMarital + (nbEnfants > 0 ? Math.min(nbEnfants, 3) * 0.5 : 0);
+                const impotRevenu = calculerImpot(netImposable * 12, nbParts) / 12;
                 const netAPayer = salaireBrut - totalSalarial - impotRevenu;
 
                 // Génération du PDF
                 const doc = new jsPDF();
                 doc.setFontSize(14);
-                doc.text("BULLETIN DE SALAIE", 105, 20, { align: 'center' });
+                doc.text("BULLETIN DE SALAIRE", 105, 20, { align: 'center' });
 
-                // Encadrement principal du PDF
+                // Encadrement principal
                 doc.setDrawColor(200, 200, 200);
                 doc.setLineWidth(0.5);
                 doc.roundedRect(10, 5, 190, 280, 5, 5);
@@ -227,15 +269,17 @@
                     nomEntreprise,
                     adresseEntreprise,
                     `SIRET : ${siret}`,
-                    `Code NAF : ${codeNaf}`, // Ajout du code NAF
+                    `Code NAF : ${codeNaf}`,
                     `Tel : ${telEntreprise}`,
                     `Email : ${emailEntreprise}`
                 ];
+
                 const yEntrepriseStart = 30;
-                const yEntrepriseHeight = 40; // Hauteur ajustée pour inclure le code NAF
+                const yEntrepriseHeight = 40;
                 doc.setFillColor(230, 245, 255);
                 doc.roundedRect(15, yEntrepriseStart, 85, yEntrepriseHeight, 3, 3, "F");
                 let yPositionEntreprise = yEntrepriseStart + (yEntrepriseHeight / 2) - ((infosEntreprise.length * 4) / 2);
+
                 infosEntreprise.forEach((line) => {
                     doc.setFontSize(9);
                     doc.text(line, 20, yPositionEntreprise, { align: 'left' });
@@ -247,15 +291,17 @@
                     nomSalarie,
                     adresseSalarie,
                     `N° DE SECURITE SOCIAL : ${secuSalarie}`,
-                    `Date d'entrée : ${dateEntree} (${anciennete} ans d'ancienneté)`, // Ajout de l'ancienneté
+                    `Date d'entrée : ${dateEntree} (${anciennete.ans} ans ${anciennete.mois} mois)`,
                     `Tel : ${telSalarie}`,
                     `Email : ${emailSalarie}`
                 ];
+
                 const ySalarieStart = 30;
-                const ySalarieHeight = 40; // Hauteur ajustée pour inclure l'ancienneté
+                const ySalarieHeight = 40;
                 doc.setFillColor(230, 245, 255);
                 doc.roundedRect(110, ySalarieStart, 85, ySalarieHeight, 3, 3, "F");
                 let yPositionSalarie = ySalarieStart + (ySalarieHeight / 2) - ((infosSalarie.length * 4) / 2);
+
                 infosSalarie.forEach((line) => {
                     doc.setFontSize(9);
                     doc.text(line, 115, yPositionSalarie, { align: 'left' });
@@ -267,7 +313,7 @@
                 doc.setFontSize(10);
                 doc.text("Période :", 105, yPositionEntreprise + 18, { align: 'center' });
                 doc.setFontSize(9);
-                doc.text(`01/${mois.padStart(2, '0')}/${annee} au 31/${mois.padStart(2, '0')}/${annee}`, 105, yPositionEntreprise + 24, { align: 'center' });
+                doc.text(`01/${mois}/${annee} au 31/${mois}/${annee}`, 105, yPositionEntreprise + 24, { align: 'center' });
                 doc.setFont(undefined, 'normal');
 
                 // Tableau des cotisations
@@ -283,7 +329,7 @@
                     ["CSG déductible", "", "6.8%", cotisations.salariales.csgDeductible.toFixed(2), "", ""],
                     ["CSG/CRDS non déductible", "", "2.9%", cotisations.salariales.csgNonDeductible.toFixed(2), "", ""],
                     ["Impôt sur le revenu prélevé à la source", "", "", impotRevenu.toFixed(2), "", ""],
-                    ["CONGÉS PAYÉS (10%)", "", "10%", congesPayes.toFixed(2), "", ""],
+                    ["CONGÉS PAYÉS (10%)", "", "10%", (salaireBrut * 0.1).toFixed(2), "", ""],
                     ["", "", "TOTAL SALARIAL", totalSalarial.toFixed(2), "", ""],
                     ["COTISATIONS PATRONALES", "", "", "", "", ""],
                     ["Maladie - maternité - invalidité - décès", "", "13%", "", "", cotisations.patronales.maladie.toFixed(2)],
@@ -304,18 +350,17 @@
                 // Calcul de la largeur totale du tableau
                 const columnWidths = [60, 15, 15, 25, 25, 30];
                 const totalTableWidth = columnWidths.reduce((a, b) => a + b, 0);
-                const startX = (210 - totalTableWidth) / 2; // Centrage horizontal
-                const tableStartY = yPositionEntreprise + 33; // Position Y de départ du tableau
-                const headerHeight = 9; // Hauteur de l'en-tête
+                const startX = (210 - totalTableWidth) / 2;
+                const tableStartY = yPositionEntreprise + 33;
+                const headerHeight = 9;
 
-                // Dessiner un rectangle arrondi uniquement en haut pour le tableau
-                doc.setDrawColor(33, 64, 154); // Couleur de bordure
-                doc.setFillColor(33, 64, 154); // Fond bleu foncé
+                doc.setDrawColor(33, 64, 154);
+                doc.setFillColor(33, 64, 154);
                 doc.roundedRect(startX, tableStartY, totalTableWidth, headerHeight, 2, 2, "FD");
 
                 // Ajout du tableau des cotisations centré
                 doc.autoTable({
-                    startY: tableStartY + headerHeight - 1, // Alignement avec le fond bleu
+                    startY: tableStartY + headerHeight - 1,
                     head: [["ÉLÉMENTS DE PAIE", "BASE", "TAUX", "À DÉDUIRE", "À PAYER", "CHARGES PATRONALES"]],
                     body: lignesPaie,
                     margin: { left: startX, right: startX },
@@ -327,8 +372,8 @@
                         halign: 'left'
                     },
                     headStyles: {
-                        fillColor: [230, 245, 255], // Fond blanc pour l'en-tête
-                        textColor: [0, 0, 0], // Texte noir
+                        fillColor: [230, 245, 255],
+                        textColor: [0, 0, 0],
                         fontSize: 7,
                         cellPadding: 2,
                         halign: 'center'
