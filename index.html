@@ -15,7 +15,7 @@
             display: block;
             margin: 10px 0 5px;
         }
-        input {
+        input, select {
             width: 80%;
             padding: 8px;
             margin-bottom: 10px;
@@ -64,8 +64,13 @@
         <input type="text" id="annee" value="2025">
         <label for="salaireBrut">Salaire Brut</label>
         <input type="text" id="salaireBrut" value="2778.98">
-        <label for="tauxImpot">Taux d'imposition (%)</label>
-        <input type="text" id="tauxImpot" value="5">
+        <label for="statutMarital">Statut marital</label>
+        <select id="statutMarital">
+            <option value="1">Célibataire</option>
+            <option value="2">Marié(e)</option>
+        </select>
+        <label for="nbEnfants">Nombre d'enfants</label>
+        <input type="number" id="nbEnfants" value="0" min="0">
         <button onclick="genererPDF()">Générer la fiche de paie</button>
     </div>
     <script>
@@ -88,26 +93,50 @@
                     "mois",
                     "annee",
                     "salaireBrut",
-                    "tauxImpot"
+                    "statutMarital",
+                    "nbEnfants"
                 ];
                 for (const field of requiredFields) {
                     const value = document.getElementById(field).value.trim();
-                    if (!value) {
+                    if (!value && field !== "nbEnfants") { // nbEnfants peut être 0
                         alert(`Le champ "${field}" est obligatoire.`);
                         return false;
                     }
                 }
                 const salaireBrut = parseFloat(document.getElementById("salaireBrut").value);
-                const tauxImpot = parseFloat(document.getElementById("tauxImpot").value);
                 if (isNaN(salaireBrut) || salaireBrut <= 0) {
                     alert("Le salaire brut doit être un nombre positif.");
                     return false;
                 }
-                if (isNaN(tauxImpot) || tauxImpot < 0 || tauxImpot > 100) {
-                    alert("Le taux d'imposition doit être un nombre entre 0 et 100.");
-                    return false;
-                }
                 return true;
+            }
+
+            // Calcul de l'impôt sur le revenu
+            function calculerImpot(revenuImposable, nbParts) {
+                const tranches = [
+                    { limite: 10_777, taux: 0 },
+                    { limite: 27_478, taux: 0.11 },
+                    { limite: 78_570, taux: 0.30 },
+                    { limite: 168_994, taux: 0.41 },
+                    { limite: Infinity, taux: 0.45 }
+                ];
+
+                // Calcul du quotient familial
+                const quotientFamilial = revenuImposable / nbParts;
+
+                // Calcul de l'impôt sur le quotient familial
+                let impotSurQuotient = 0;
+                for (let i = 0; i < tranches.length; i++) {
+                    const tranche = tranches[i];
+                    const limiteInferieure = i === 0 ? 0 : tranches[i - 1].limite;
+                    const trancheRevenu = Math.min(tranche.limite, quotientFamilial) - limiteInferieure;
+                    if (trancheRevenu > 0) {
+                        impotSurQuotient += trancheRevenu * tranche.taux;
+                    }
+                }
+
+                // Impôt total après application des parts
+                return impotSurQuotient * nbParts;
             }
 
             // Fonction principale pour générer le PDF
@@ -128,7 +157,8 @@
                 const mois = document.getElementById("mois").value;
                 const annee = document.getElementById("annee").value;
                 const salaireBrut = parseFloat(document.getElementById("salaireBrut").value);
-                const tauxImpot = parseFloat(document.getElementById("tauxImpot").value) / 100;
+                const statutMarital = parseInt(document.getElementById("statutMarital").value);
+                const nbEnfants = parseInt(document.getElementById("nbEnfants").value);
 
                 // Calcul des cotisations
                 const cotisations = {
@@ -140,8 +170,7 @@
                         retraiteComplementaireTranche2: salaireBrut * 0.009,
                         chomage: salaireBrut * 0.024,
                         csgDeductible: salaireBrut * 0.068,
-                        csgNonDeductible: salaireBrut * 0.029,
-                        impotRevenu: salaireBrut * tauxImpot
+                        csgNonDeductible: salaireBrut * 0.029
                     },
                     patronales: {
                         maladie: salaireBrut * 0.13,
@@ -160,13 +189,20 @@
                 // Calculs finaux
                 const totalSalarial = Object.values(cotisations.salariales).reduce((acc, val) => acc + val, 0);
                 const totalPatronal = Object.values(cotisations.patronales).reduce((acc, val) => acc + val, 0);
-                const netImposable = salaireBrut - cotisations.salariales.csgDeductible;
-                const netAPayer = salaireBrut - totalSalarial;
+                const netImposable = salaireBrut - cotisations.salariales.csgDeductible - totalSalarial + cotisations.salariales.csgNonDeductible;
+
+                // Calcul du nombre de parts fiscales
+                const nbParts = statutMarital + (nbEnfants > 0 ? Math.min(nbEnfants, 3) * 0.5 : 0); // Maximum 3 enfants pris en compte
+
+                // Calcul de l'impôt sur le revenu
+                const impotRevenu = calculerImpot(netImposable * 12, nbParts) / 12; // Mensualisation
+
+                const netAPayer = salaireBrut - totalSalarial - impotRevenu;
 
                 // Génération du PDF
                 const doc = new jsPDF();
                 doc.setFontSize(14);
-                doc.text("BULLETIN DE SALAIRE", 105, 20, { align: 'center' });
+                doc.text("BULLETIN DE SALAIE", 105, 20, { align: 'center' });
 
                 // Encadrement principal du PDF
                 doc.setDrawColor(200, 200, 200);
@@ -231,7 +267,7 @@
                     ["Chômage", "", "2.4%", cotisations.salariales.chomage.toFixed(2), "", ""],
                     ["CSG déductible", "", "6.8%", cotisations.salariales.csgDeductible.toFixed(2), "", ""],
                     ["CSG/CRDS non déductible", "", "2.9%", cotisations.salariales.csgNonDeductible.toFixed(2), "", ""],
-                    ["Impôt sur le revenu prélevé à la source", "", `${(tauxImpot * 100).toFixed(2)}%`, cotisations.salariales.impotRevenu.toFixed(2), "", ""],
+                    ["Impôt sur le revenu prélevé à la source", "", "", impotRevenu.toFixed(2), "", ""],
                     ["", "", "TOTAL SALARIAL", totalSalarial.toFixed(2), "", ""],
                     ["COTISATIONS PATRONALES", "", "", "", "", ""],
                     ["Maladie - maternité - invalidité - décès", "", "13%", "", "", cotisations.patronales.maladie.toFixed(2)],
